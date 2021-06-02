@@ -141,12 +141,40 @@ void MainComponent::processOSCMessage(OSCMessage message)
     StringArray AdressArray;
     AdressArray.addTokens(message.getAddressPattern().toString(), "/", "");
     
-    DBG(AdressArray[2]);
+    //DBG("Adresse Array : " + AdressArray[2]);
     
-    if(message.getAddressPattern().toString().contains("fader")) SendMidi(MidiMessage::pitchWheel(AdressArray[2].getIntValue(), (int)(message[0].getFloat32()*16368)));
+    if(message.getAddressPattern().toString().contains("ch")) {
     
-    if(message.getAddressPattern().toString().contains("mute")) chMute.set(AdressArray[2].getIntValue(), (message[0].getInt32())?true:false);
+        if(message.getAddressPattern().toString().contains("fader")) {
+            SendMidi(MidiMessage::pitchWheel(AdressArray[2].getIntValue(), (int)(message[0].getFloat32()*16368)));
+        }
+        
+        if(message.getAddressPattern().toString().contains("on")) {
+            bool ison;
+            int channel = AdressArray[2].getIntValue();
+            if (message[0].getInt32() == 1) {
+                ison = true;
+            } else {
+                ison = false;
+            }
+            //chMute.set(AdressArray[2].getIntValue(), (message[0].getInt32())?true:false);
+            //chMute.set(AdressArray[2].getIntValue(), (ison));
+            chMute.set(channel, ison);
+            //DBG("CHANNEL : " + (String)channel);
+            if( chMute[channel]) {
+               // DBG("chMuted (light off) > " + (String)message[0].getInt32());
+                SendMidi(MidiMessage::noteOn(1, channel+15, (float)0));
+            } else {
+               // DBG("chUnMute (light on) > " + (String)message[0].getInt32());
+                SendMidi(MidiMessage::noteOn(1, channel+15, (float)1));
+            }
+            //SendMidi(MidiMessage::noteOn(1, 16, (float)1));
+            
+        }
+    }
 }
+
+
 void MainComponent::timerCallback() {
     sendOscMsg(OSCMessage("/xremote"));
 }
@@ -194,19 +222,44 @@ void MainComponent::ProcessMidiMessage(const juce::MidiMessage &message)
  
     if(message.isNoteOn()&&message.getChannel()==1) {
         String valueToSend;
-        switch (message.getNoteNumber()) {
-            case 16:
-                valueToSend = (chMute[1])?"ON":"OFF";
-                DBG(valueToSend);
-                sendOscMsg(OSCMessage("/ch/01/mix/on", valueToSend));
-                break;
+        int note = message.getNoteNumber();
+        
+        // MUTES
+        if ( note >= 16 && note <= 23 ) {
+            int chann = note - 15;
+            DBG("======== The channel is " + (String)chann);
+            
+            if( chMute[chann]) {
+                DBG("chMuted (light off) > ");
+                chMute.set(chann, false);
+                valueToSend = "ON";
+                sendOscMsg(OSCMessage("/ch/0"+ (String)chann+"/mix/on", valueToSend));
+                SendMidi(MidiMessage::noteOn(1, note, (float)0));
                 
-            default:
-                break;
+            } else {
+                DBG("chUnMute (light on) > ");
+                chMute.set(chann, true);
+                valueToSend = "OFF";
+                sendOscMsg(OSCMessage("/ch/0"+ (String)chann+"/mix/on", valueToSend));
+                SendMidi(MidiMessage::noteOn(1, note, (float)1));
+            }
+            
         }
+        
+        
         
     }
     
+    //        switch (message.getNoteNumber()) {
+    //            case 16:
+    //                valueToSend = (chMute[1])?"ON":"OFF";
+    //                DBG("valueTosend" + valueToSend);
+    //                sendOscMsg(OSCMessage("/ch/01/mix/on", valueToSend));
+    //                break;
+    //
+    //            default:
+    //                break;
+    //        }
     if(message.isPitchWheel()){
         
         sendOscMsg(OSCMessage("/ch/0"+ (String)message.getChannel()+"/mix/fader", (float)message.getPitchWheelValue()/16368));
