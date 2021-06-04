@@ -37,7 +37,8 @@ private:
     int OSC_LISTEN_PORT = 10023;
     int MIDI_DEVICE_INDEX = 1;
     
-    Array<bool> chMute;
+    Array<bool> chOn;
+    Array<bool> chSolo;
     
     //OSC
     bool sendOscMsg(OSCMessage msg);

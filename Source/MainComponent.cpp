@@ -30,13 +30,17 @@ MainComponent::MainComponent()
         
         sendOscMsg(OSCMessage("/xremote"));
         startTimer(10000);
-        OSCMessage toto("/ch/01/mix/fader");
-        toto.addString("-10");
-        sendOscMsg(toto);
-        
-//        OSCMessage toto("node");
-//        toto.addString("-show/showfile/chan16");
+//        OSCMessage toto("/ch/01/mix/fader");
+//        toto.addString("-10");
 //        sendOscMsg(toto);
+        
+//        OSCMessage tata("node");
+//        tata.addString("-show/showfile/chan16");
+//        sendOscMsg(tata);
+    
+//        OSCMessage titi("/-stat/chfaderbank");
+//    titi.addInt32(0);
+//    sendOscMsg(titi);
     
     
     
@@ -53,15 +57,30 @@ MainComponent::MainComponent()
         midiOutput = MidiOutput::openDevice(MIDI_DEVICE_INDEX);
         }
     
-    chMute.add(0);
-    for (int i = 1 ; i<32; i++) {
+    DBG("===== OSC <> MIDI INITIALISATION =====" );
+    
+    chOn.add(0);
+    chSolo.add(0);
+    for (int i = 1 ; i<=8; i++) {
         
-        chMute.add(0);
+        chOn.add(0);
+        chSolo.add(0);
         
-        String toto = (i<10)?"0":"";
-        sendOscMsg(OSCMessage("/ch/"+ toto +(String)i +"/mix/mute"));
+        String chan = (i<10)?"0":"";
+        sendOscMsg(OSCMessage("/ch/"+ chan +(String)i +"/mix/on/"));
+        sendOscMsg(OSCMessage("/-stat/solosw/"+ chan +(String)i ));
+        
     }
     
+    // INIT FADERS
+    for (int i = 1 ; i<=8; i++) {
+        String chan = (i<10)?"0":"";
+        sendOscMsg(OSCMessage("/ch/"+ chan +(String)i + "/mix/fader"));
+    }
+    
+    
+    DBG("===== OSC <> MIDI INITIALISATION ==END" );
+    DBG("" );
 }
 
 MainComponent::~MainComponent()
@@ -141,8 +160,12 @@ void MainComponent::processOSCMessage(OSCMessage message)
     StringArray AdressArray;
     AdressArray.addTokens(message.getAddressPattern().toString(), "/", "");
     
-    //DBG("Adresse Array : " + AdressArray[2]);
-    
+//    DBG("Adresse Array 0 : " + AdressArray[0]);
+//    DBG("Adresse Array 1 : " + AdressArray[1]);
+//    DBG("Adresse Array 2 : " + AdressArray[2]);
+//    DBG("Adresse Array 3 : " + AdressArray[3]);
+//    DBG("Adresse Array 4 : " + AdressArray[4]);
+//
     if(message.getAddressPattern().toString().contains("ch")) {
     
         if(message.getAddressPattern().toString().contains("fader")) {
@@ -159,19 +182,42 @@ void MainComponent::processOSCMessage(OSCMessage message)
             }
             //chMute.set(AdressArray[2].getIntValue(), (message[0].getInt32())?true:false);
             //chMute.set(AdressArray[2].getIntValue(), (ison));
-            chMute.set(channel, ison);
-            //DBG("CHANNEL : " + (String)channel);
-            if( chMute[channel]) {
-               // DBG("chMuted (light off) > " + (String)message[0].getInt32());
-                SendMidi(MidiMessage::noteOn(1, channel+15, (float)0));
+            chOn.set(channel, ison);
+            DBG("CHANNEL : " + (String)channel);
+            if( chOn[channel]) {
+                DBG("CH ON > " + (String)message[0].getInt32());
+                SendMidi(MidiMessage::noteOn(1, channel+15, (float)0)); // REVERSE MAP OF ON VS SOLO !! EUPHONIX USE "ON" BUTTON LIKE A "MUTE" ONE
             } else {
-               // DBG("chUnMute (light on) > " + (String)message[0].getInt32());
+                DBG("CH OFF > " + (String)message[0].getInt32());
                 SendMidi(MidiMessage::noteOn(1, channel+15, (float)1));
             }
             //SendMidi(MidiMessage::noteOn(1, 16, (float)1));
             
         }
     }
+        
+    if(message.getAddressPattern().toString().contains("solosw")) {
+        bool ison;
+        int channel = AdressArray[3].getIntValue();
+        if (message[0].getInt32() == 1) {
+            ison = true;
+        } else {
+            ison = false;
+        }
+        chSolo.set(channel, ison);
+        //DBG("%%% SOLO CHANNEL : " + (String)channel);
+        
+        if( chSolo[channel]) {
+            DBG("solo ON (light ON) > " + (String)message[0].getInt32());
+            SendMidi(MidiMessage::noteOn(1, channel+7, (float)1));
+        } else {
+            DBG("solo off (light OFF) > " + (String)message[0].getInt32());
+            SendMidi(MidiMessage::noteOn(1, channel+7, (float)0));
+        }
+        //SendMidi(MidiMessage::noteOn(1, 16, (float)1));
+        
+    }
+    
 }
 
 
@@ -215,9 +261,9 @@ void MainComponent::processMessage(const juce::MidiMessage &message, const juce:
 
 void MainComponent::ProcessMidiMessage(const juce::MidiMessage &message)
 {
-    DBG("MidiMessage Received : " + String::toHexString (message.getRawData(), message.getRawDataSize()));
-    DBG("-> "+ message.getDescription());
-    if(message.isNoteOn()) DBG("--> "+ (String)message.getNoteNumber());
+    //DBG("MidiMessage Received : " + String::toHexString (message.getRawData(), message.getRawDataSize()));
+    //DBG("-> "+ message.getDescription());
+    //if(message.isNoteOn()) DBG("--> "+ (String)message.getNoteNumber());
     
  
     if(message.isNoteOn()&&message.getChannel()==1) {
@@ -227,20 +273,42 @@ void MainComponent::ProcessMidiMessage(const juce::MidiMessage &message)
         // MUTES
         if ( note >= 16 && note <= 23 ) {
             int chann = note - 15;
-            DBG("======== The channel is " + (String)chann);
+            //DBG("======== The channel is " + (String)chann);
             
-            if( chMute[chann]) {
-                DBG("chMuted (light off) > ");
-                chMute.set(chann, false);
+            if( chOn[chann]) {
+                //DBG("chMuted (light off) > ");
+                chOn.set(chann, false);
+                valueToSend = "OFF";
+                sendOscMsg(OSCMessage("/ch/0"+ (String)chann+"/mix/on", valueToSend));
+                SendMidi(MidiMessage::noteOn(1, note, (float)1));
+                
+            } else {
+                //DBG("chUnMute (light on) > ");
+                chOn.set(chann, true);
                 valueToSend = "ON";
                 sendOscMsg(OSCMessage("/ch/0"+ (String)chann+"/mix/on", valueToSend));
                 SendMidi(MidiMessage::noteOn(1, note, (float)0));
-                
-            } else {
-                DBG("chUnMute (light on) > ");
-                chMute.set(chann, true);
+            }
+            
+        }
+        
+        // SOLOS
+        if ( note >= 8 && note <= 15 ) {
+            int chann = note - 7;
+            //DBG("======== The channel is " + (String)chann);
+            
+            if( chSolo[chann]) {
+                //DBG("chSolo (light on) > ");
+                chSolo.set(chann, false);
                 valueToSend = "OFF";
-                sendOscMsg(OSCMessage("/ch/0"+ (String)chann+"/mix/on", valueToSend));
+                sendOscMsg(OSCMessage("/-stat/solosw/0"+ (String)chann , valueToSend));
+                SendMidi(MidiMessage::noteOn(1, note, (float)0));
+                //sendOscMsg(OSCMessage("/-stat/solosw/"+ chan +(String)i ));
+            } else {
+                //DBG("chSolo (light odd) > ");
+                chSolo.set(chann, true);
+                valueToSend = "ON";
+                sendOscMsg(OSCMessage("/-stat/solosw/0"+ (String)chann , valueToSend));
                 SendMidi(MidiMessage::noteOn(1, note, (float)1));
             }
             
